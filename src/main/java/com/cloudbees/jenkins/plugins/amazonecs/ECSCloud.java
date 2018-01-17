@@ -236,7 +236,10 @@ public class ECSCloud extends Cloud {
             Date timeout = new Date(now.getTime() + 1000 * slaveTimoutInSeconds);
 
             synchronized (cluster) {
-                getEcsService().waitForSufficientClusterResources(timeout, template, cluster);
+                if (!template.isFargate()){
+                    getEcsService().waitForSufficientClusterResources(timeout, template, cluster);
+                }
+
 
                 String uniq = Long.toHexString(System.nanoTime());
                 slave = new ECSSlave(ECSCloud.this, name + "-" + uniq, template.getRemoteFSRoot(),

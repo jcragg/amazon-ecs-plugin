@@ -27,6 +27,7 @@ package com.cloudbees.jenkins.plugins.amazonecs;
 
 import java.io.IOException;
 import java.text.MessageFormat;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.Deque;
@@ -37,14 +38,7 @@ import java.util.logging.Logger;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
 
-import org.apache.commons.lang.ObjectUtils;
-import org.apache.commons.lang.StringUtils;
-
-import com.amazonaws.ClientConfiguration;
-import com.amazonaws.regions.Region;
-import com.amazonaws.regions.RegionUtils;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.ecs.AmazonECSClient;
+import com.amazonaws.services.ecs.model.AwsVpcConfiguration;
 import com.amazonaws.services.ecs.model.ContainerDefinition;
 import com.amazonaws.services.ecs.model.ContainerInstance;
 import com.amazonaws.services.ecs.model.ContainerOverride;
@@ -54,11 +48,13 @@ import com.amazonaws.services.ecs.model.DescribeTaskDefinitionRequest;
 import com.amazonaws.services.ecs.model.DescribeTaskDefinitionResult;
 import com.amazonaws.services.ecs.model.Failure;
 import com.amazonaws.services.ecs.model.KeyValuePair;
+import com.amazonaws.services.ecs.model.LaunchType;
 import com.amazonaws.services.ecs.model.ListContainerInstancesRequest;
 import com.amazonaws.services.ecs.model.ListContainerInstancesResult;
 import com.amazonaws.services.ecs.model.ListTaskDefinitionsRequest;
 import com.amazonaws.services.ecs.model.ListTaskDefinitionsResult;
 import com.amazonaws.services.ecs.model.LogConfiguration;
+import com.amazonaws.services.ecs.model.NetworkConfiguration;
 import com.amazonaws.services.ecs.model.RegisterTaskDefinitionRequest;
 import com.amazonaws.services.ecs.model.RegisterTaskDefinitionResult;
 import com.amazonaws.services.ecs.model.Resource;
@@ -66,6 +62,14 @@ import com.amazonaws.services.ecs.model.RunTaskRequest;
 import com.amazonaws.services.ecs.model.RunTaskResult;
 import com.amazonaws.services.ecs.model.StopTaskRequest;
 import com.amazonaws.services.ecs.model.TaskOverride;
+import org.apache.commons.lang.ObjectUtils;
+import org.apache.commons.lang.StringUtils;
+
+import com.amazonaws.ClientConfiguration;
+import com.amazonaws.regions.Region;
+import com.amazonaws.regions.RegionUtils;
+import com.amazonaws.regions.Regions;
+import com.amazonaws.services.ecs.AmazonECSClient;
 import com.cloudbees.jenkins.plugins.awscredentials.AWSCredentialsHelper;
 import com.cloudbees.jenkins.plugins.awscredentials.AmazonWebServicesCredentials;
 
@@ -171,6 +175,7 @@ class ECSService {
         if (template.getMemoryReservation() > 0) /* this is the soft limit */
             def.withMemoryReservation(template.getMemoryReservation());
 
+
         if (template.getMemory() > 0) /* this is the hard limit */
             def.withMemory(template.getMemory());
 
@@ -230,7 +235,14 @@ class ECSService {
                     .withFamily(familyName)
                     .withVolumes(template.getVolumeEntries())
                     .withContainerDefinitions(def);
-            
+
+            if (template.isFargate()) {
+                request
+                        .withRequiresCompatibilities(template.getLaunchType())
+                        .withNetworkMode("awsvpc")
+                        .withMemory(String.valueOf(template.getMemoryConstraint()))
+                        .withCpu(String.valueOf(template.getCpu()));
+            }
             if (template.getTaskrole() != null) {
                 request.withTaskRoleArn(template.getTaskrole());
             }            
@@ -258,16 +270,31 @@ class ECSService {
         envNodeSecret.setName("SLAVE_NODE_SECRET");
         envNodeSecret.setValue(slave.getComputer().getJnlpMac());
 
-        final RunTaskResult runTaskResult = client.runTask(new RunTaskRequest()
-          .withTaskDefinition(taskDefinitionArn)
-          .withOverrides(new TaskOverride()
-            .withContainerOverrides(new ContainerOverride()
-              .withName(fullQualifiedTemplateName(slave.getCloud(), template))
-              .withCommand(command)
-              .withEnvironment(envNodeName)
-              .withEnvironment(envNodeSecret)))
-          .withCluster(clusterArn)
-        );
+
+        RunTaskRequest req = new RunTaskRequest()
+                .withTaskDefinition(taskDefinitionArn)
+                .withLaunchType(LaunchType.fromValue(template.getLaunchType()))
+                .withOverrides(new TaskOverride()
+                        .withContainerOverrides(new ContainerOverride()
+                                .withName(fullQualifiedTemplateName(slave.getCloud(), template))
+                                .withCommand(command)
+                                .withEnvironment(envNodeName)
+                                .withEnvironment(envNodeSecret)))
+                .withCluster(clusterArn);
+
+        if (template.isFargate()) {
+            AwsVpcConfiguration awsVpcConfiguration = new AwsVpcConfiguration();
+            awsVpcConfiguration.setAssignPublicIp(template.getAssignPublicIp() ? "ENABLED" : "DISABLED");
+            awsVpcConfiguration.setSecurityGroups(Arrays.asList(template.getSecurityGroups().split(",")));
+            awsVpcConfiguration.setSubnets(Arrays.asList(template.getSubnets().split(",")));
+
+            NetworkConfiguration networkConfiguration = new NetworkConfiguration();
+            networkConfiguration.withAwsvpcConfiguration(awsVpcConfiguration);
+
+            req.withNetworkConfiguration(networkConfiguration);
+        }
+        final RunTaskResult runTaskResult = client.runTask(req);
+
 
         if (!runTaskResult.getFailures().isEmpty()) {
             LOGGER.log(Level.WARNING, "Slave {0} - Failure to run task with definition {1} on ECS cluster {2}", new Object[]{slave.getNodeName(), taskDefinitionArn, clusterArn});
