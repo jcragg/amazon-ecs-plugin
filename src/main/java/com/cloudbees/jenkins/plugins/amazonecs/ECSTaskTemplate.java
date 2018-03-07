@@ -167,6 +167,15 @@ public class ECSTaskTemplate extends AbstractDescribableImpl<ECSTaskTemplate> {
      */
     @CheckForNull
     private String taskrole;
+
+    /** ARN of the task execution role that the Amazon ECS container
+     *  agent and the Docker daemon can assume
+     *
+     * @see RegisterTaskDefinitionRequest#withExecutionRoleArn(String)
+     */
+    @CheckForNull
+    private String executionRole;
+
     /**
       JVM arguments to start slave.jar
      */
@@ -256,6 +265,11 @@ public class ECSTaskTemplate extends AbstractDescribableImpl<ECSTaskTemplate> {
     }
 
     @DataBoundSetter
+    public void setExecutionRole(String executionRoleArn) {
+        this.executionRole = StringUtils.trimToNull(executionRoleArn);
+    }
+
+    @DataBoundSetter
     public void setEntrypoint(String entrypoint) {
         this.entrypoint = StringUtils.trimToNull(entrypoint);
     }
@@ -329,6 +343,10 @@ public class ECSTaskTemplate extends AbstractDescribableImpl<ECSTaskTemplate> {
 
     public String getTaskrole() {
         return taskrole;
+    }
+
+    public String getExecutionRole() {
+        return executionRole;
     }
 
     public String getJvmArgs() {
