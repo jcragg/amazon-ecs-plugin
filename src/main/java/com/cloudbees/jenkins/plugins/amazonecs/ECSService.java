@@ -70,6 +70,7 @@ import com.amazonaws.regions.Region;
 import com.amazonaws.regions.RegionUtils;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ecs.AmazonECSClient;
+import com.amazonaws.services.ecs.model.Ulimit;
 import com.cloudbees.jenkins.plugins.awscredentials.AWSCredentialsHelper;
 import com.cloudbees.jenkins.plugins.awscredentials.AmazonWebServicesCredentials;
 
@@ -149,14 +150,14 @@ class ECSService {
             LOGGER.log(Level.SEVERE, "Couldn't stop task arn " + taskArn + " caught exception: " + e.getMessage(), e);
         }
     }
-    
+
     /**
-     * Looks whether the latest task definition matches the desired one. If yes, returns the ARN of the existing one. 
+     * Looks whether the latest task definition matches the desired one. If yes, returns the ARN of the existing one.
      * If no, register a new task definition with desired parameters and return the new ARN.
      */
     String registerTemplate(final ECSCloud cloud, final ECSTaskTemplate template, String clusterArn) {
         final AmazonECSClient client = getAmazonECSClient();
-        
+
         String familyName = fullQualifiedTemplateName(cloud, template);
         final ContainerDefinition def = new ContainerDefinition()
                 .withName(familyName)
@@ -164,6 +165,7 @@ class ECSService {
                 .withEnvironment(template.getEnvironmentKeyValuePairs())
                 .withExtraHosts(template.getExtraHostEntries())
                 .withMountPoints(template.getMountPointEntries())
+                .withUlimits(template.getUlimitConfigEntries())
                 .withCpu(template.getCpu())
                 .withPrivileged(template.getPrivileged())
                 .withEssential(true);
